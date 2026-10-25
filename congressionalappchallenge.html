@@ -1,0 +1,1175 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js"></script>
+    <title> Sarasota Stormlines </title>
+    <style>
+        :root {
+            --navy:   #07122B;
+            --navy-2: #0E1E42;
+            --navy-3: #14254F;
+            --line:   #20335F;
+            --fg:     #F4F6FB;
+            --muted:  #90A2C6;
+            --accent: #FF9E6B;
+            --accent-2:#FFBE93;
+            --accent-ink: #07122B;
+            --danger: #F2524B;
+            --crit: #F2524B;
+            --high: #FF7A45;
+            --warn: #FFC36B;
+            --safe: #4FD39A;
+
+            --display: 'Big Shoulders Display', 'Arial Narrow', sans-serif;
+            --body: 'Space Grotesk', system-ui, sans-serif;
+
+            --pop: cubic-bezier(.34, 1.56, .64, 1);
+            --smooth: cubic-bezier(.4, 0, .2, 1);
+            --shadow: 0 10px 30px -10px rgba(0,0,0,.55);
+        }
+
+        * { box-sizing: border-box; }
+        html { background: var(--navy); scroll-behavior: smooth; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--navy);
+            color: var(--fg);
+            font-family: var(--body);
+            line-height: 1.6;
+            padding-bottom: 92px;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            inset: -40%;
+            background:
+                repeating-linear-gradient(115deg,
+                transparent 0 38px,
+                rgba(255,158,107,.045) 38px 40px);
+            animation: drift 26s linear infinite;
+            pointer-events: none;
+            z-index: 0;
+        }
+        body::after {
+            content: "";
+            position: fixed;
+            top: -20%; right: -20%;
+            width: 70vmax; height: 70vmax;
+            background: radial-gradient(circle, rgba(255,158,107,.10), transparent 60%);
+            pointer-events: none;
+            z-index: 0;
+        }
+        @keyframes drift { to { transform: translate(40px, 40px); } }
+
+        .appHeader, .screen, nav { position: relative; z-index: 1; }
+
+        .appHeader {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px 22px;
+            background: rgba(7,18,43,.82);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--line);
+        }
+        .logoImg { width: 34px; height: 34px; flex: none; animation: spin 16s linear infinite; }
+        .logoText {
+            font-family: var(--display);
+            font-weight: 900;
+            font-size: 1.4rem;
+            letter-spacing: .14em;
+            text-transform: uppercase;
+        }
+
+        .screen { display: none; padding: 32px 22px; max-width: 760px; margin: 0 auto; }
+        .screen.active { display: block; animation: screenIn .45s var(--pop); }
+        @keyframes screenIn { from { opacity: 0; transform: translateY(18px) scale(.985); } to { opacity: 1; transform: none; } }
+
+        h1 {
+            font-family: var(--display);
+            font-weight: 900;
+            font-size: clamp(40px, 10vw, 68px);
+            line-height: .88;
+            text-transform: uppercase;
+            letter-spacing: .01em;
+            margin: 0 0 18px;
+        }
+        h3 { font-family: var(--display); font-weight: 700; margin: 0 0 8px; }
+
+        input[type="text"] {
+            font-family: var(--body);
+            font-size: 1rem;
+            width: 100%;
+            max-width: 420px;
+            padding: 15px 16px;
+            background: var(--navy-2);
+            color: var(--fg);
+            border: 1.5px solid var(--navy-3);
+            transition: border-color .2s var(--smooth), box-shadow .2s var(--smooth);
+        }
+        input[type="text"]:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 4px rgba(255,158,107,.18);
+        }
+
+        button {
+            font-family: var(--display);
+            font-weight: 900;
+            font-size: 1.25rem;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            background: var(--accent);
+            color: var(--accent-ink);
+            border: 0;
+            padding: 15px 30px;
+            margin-top: 12px;
+            cursor: pointer;
+            box-shadow: 0 6px 18px -6px rgba(255,158,107,.6);
+            transition: transform .18s var(--pop), box-shadow .18s var(--pop), filter .18s var(--smooth);
+        }
+        button:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 14px 28px -8px rgba(255,158,107,.7); filter: brightness(1.05); }
+        button:active { transform: translateY(0) scale(.96); box-shadow: 0 4px 12px -6px rgba(255,158,107,.5); }
+        button:focus-visible { outline: 3px solid var(--accent-2); outline-offset: 3px; }
+
+        .mapPanel { padding: 0; overflow: hidden; margin-bottom: 18px; }
+        #map { height: 320px; width: 100%; margin: 0; border: 0; }
+
+        #loading { display: flex; align-items: center; gap: 12px; margin-top: 18px; color: var(--muted); }
+        #loading[hidden] { display: none; }
+        .spinner {
+            width: 24px; height: 24px;
+            border: 3px solid var(--navy-3);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin .8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        nav {
+            position: fixed; left: 0; right: 0; bottom: 0;
+            display: flex;
+            background: rgba(14,30,66,.92);
+            backdrop-filter: blur(10px);
+            border-top: 1px solid var(--line);
+            padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px));
+            z-index: 10;
+        }
+        nav button {
+            flex: 1;
+            background: none; color: var(--muted);
+            font-family: var(--body); font-size: .8rem; font-weight: 600;
+            text-transform: none; letter-spacing: 0;
+            padding: 10px 4px; margin: 0; min-height: 50px;
+            box-shadow: none;
+            position: relative;
+            transition: color .2s var(--smooth), transform .2s var(--pop);
+        }
+        nav button:hover { color: var(--fg); transform: translateY(-2px); filter: none; box-shadow: none; }
+        nav button.navActive { color: var(--accent); }
+        nav button.navActive::after {
+            content: ""; position: absolute; top: 2px; left: 50%; transform: translateX(-50%);
+            width: 26px; height: 3px; background: var(--accent); border-radius: 2px;
+        }
+        nav button:disabled { opacity: .35; cursor: not-allowed; }
+        nav button:disabled:hover { color: var(--muted); transform: none; }
+
+        @media (min-width: 768px) {
+            body { padding-bottom: 0; padding-left: 230px; }
+            .appHeader { padding-left: 252px; }
+            nav {
+                top: 0; bottom: 0; right: auto; width: 230px;
+                flex-direction: column; gap: 6px;
+                border-top: 0; border-right: 1px solid var(--line);
+                padding: 90px 14px 14px;
+            }
+            nav button { flex: none; text-align: left; font-size: 1rem; padding: 14px 16px; }
+            nav button:hover { transform: translateX(3px); }
+            nav button.navActive::after { top: 50%; left: 0; transform: translateY(-50%); width: 3px; height: 22px; }
+        }
+
+        #extraScreen .lead { color: var(--muted); margin: 0 0 20px; }
+        details.tip { background: var(--navy-2); border: 1px solid var(--line); margin-bottom: 12px; transition: border-color .2s var(--smooth); }
+        details.tip[open] { border-color: var(--accent); }
+        details.tip summary {
+            list-style: none; cursor: pointer; padding: 16px 18px;
+            font-family: var(--display); font-weight: 900; font-size: 1.15rem;
+            text-transform: uppercase; letter-spacing: .02em;
+            display: flex; justify-content: space-between; align-items: center; gap: 12px;
+            transition: color .2s var(--smooth);
+        }
+        details.tip summary::-webkit-details-marker { display: none; }
+        details.tip summary::after { content: "+"; font-size: 1.5rem; color: var(--accent); transition: transform .25s var(--pop); }
+        details.tip[open] summary::after { content: "–"; }
+        details.tip summary:hover { color: var(--accent); }
+        .tip-body { padding: 0 18px 18px; animation: reveal .35s var(--smooth); }
+        @keyframes reveal { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+        .tip-body p { margin: 0 0 10px; }
+
+        label.check {
+            display: flex; align-items: flex-start; gap: 11px;
+            padding: 11px 0; cursor: pointer; border-bottom: 1px solid var(--line);
+            transition: padding-left .18s var(--smooth);
+        }
+        label.check:hover { padding-left: 8px; }
+        label.check:last-child { border-bottom: 0; }
+        label.check input { width: 20px; height: 20px; accent-color: var(--accent); margin: 2px 0 0; flex: none; }
+        label.check:has(input:checked) { color: var(--muted); text-decoration: line-through; }
+
+        #planContent h2 { font-family: var(--display); text-transform: uppercase; color: var(--accent); margin: 0 0 10px; }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation: none !important; transition: none !important; }
+        }
+
+        .tiles {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+        .tile {
+            background: var(--navy-2);
+            border: 1px solid var(--line);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+            transition: border-color .2s var(--smooth), transform .2s var(--pop);
+        }
+        .tile:hover { border-color: var(--accent); transform: translateY(-3px); }
+        .tLabel { font-size: .67rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+        .tVal { font-family: var(--display); font-weight: 900; font-size: 1.9rem; line-height: 1; }
+        .tSub { font-size: .72rem; color: var(--muted); margin-top: 2px; }
+
+        .panel { background: var(--navy-2); border: 1px solid var(--line); padding: 22px; margin-bottom: 18px; }
+        .panel.risk { border-top: 4px solid var(--accent); animation: verdict .6s var(--pop); }
+        .panel.risk.sev-crit { border-top-color: var(--crit); }
+        .panel.risk.sev-high { border-top-color: var(--high); }
+        .panel.risk.sev-warn { border-top-color: var(--warn); }
+        .panel.risk.sev-low  { border-top-color: var(--safe); }
+        @keyframes verdict { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+
+        .sev {
+            display: inline-block;
+            font-family: var(--body);
+            font-weight: 700;
+            font-size: .72rem;
+            letter-spacing: .12em;
+            padding: 5px 11px;
+            margin-bottom: 14px;
+            color: var(--navy);
+            background: var(--accent);
+        }
+        .sev-crit .sev { background: var(--crit); color: #fff; }
+        .sev-high .sev { background: var(--high); color: var(--navy); }
+        .sev-warn .sev { background: var(--warn); color: var(--navy); }
+        .sev-low  .sev { background: var(--safe); color: var(--navy); }
+
+        #risk {
+            color: var(--fg);
+            font-family: var(--display);
+            font-weight: 900;
+            font-size: clamp(1.6rem, 5.5vw, 2.4rem);
+            line-height: 1.04;
+            text-transform: uppercase;
+            margin: 0;
+        }
+        .sev-crit #risk { color: var(--crit); }
+        .sev-high #risk { color: var(--high); }
+        .sev-warn #risk { color: var(--warn); }
+        .sev-low  #risk { color: var(--safe); }
+        .riskDetail { color: var(--muted); font-family: var(--body); font-size: 1rem; margin: 12px 0 0; }
+
+        .resultHead {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 14px;
+            padding-bottom: 18px;
+            margin-bottom: 24px;
+            border-bottom: 1px solid var(--line);
+        }
+        .addrLabel { display: block; font-size: .72rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
+        .addr { font-family: var(--display); font-weight: 900; font-size: clamp(1.4rem, 4vw, 2rem); line-height: 1; }
+        .headMeta { display: flex; align-items: center; gap: 12px; }
+        .zoneBadge { font-size: .9rem; font-weight: 600; padding: 9px 14px; background: var(--navy-2); border: 1px solid var(--line); }
+        .zoneBadge b { color: var(--accent); font-family: var(--display); font-size: 1.15rem; }
+        .live { display: flex; align-items: center; gap: 7px; font-size: .78rem; color: var(--muted); }
+        .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--safe); animation: ping 1.8s infinite; }
+        @keyframes ping {
+            0%   { box-shadow: 0 0 0 0 rgba(79,211,154,.5); }
+            70%  { box-shadow: 0 0 0 8px rgba(79,211,154,0); }
+            100% { box-shadow: 0 0 0 0 rgba(79,211,154,0); }
+        }
+
+        .sectionHead {
+            font-family: var(--display);
+            font-weight: 900;
+            font-size: 1.1rem;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin: 28px 0 14px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--line);
+        }
+        .stormTitle { font-family: var(--display); font-weight: 900; font-size: clamp(1.9rem, 5vw, 2.6rem); text-transform: uppercase; letter-spacing: .04em; margin: 28px 0 6px; color: var(--fg); }
+
+        .stormGrid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+            align-items: start;
+            margin-bottom: 18px;
+        }
+        @media (max-width: 640px) {
+            .stormGrid { grid-template-columns: 1fr; }
+        }
+
+        .kicker { font-family: var(--body); font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); font-size: .76rem; margin: 0 0 14px; }
+        .sub { color: var(--muted); font-size: 1.05rem; margin: 0 0 26px; max-width: 470px; }
+        .form { background: var(--navy-2); border: 1px solid var(--line); padding: 22px; max-width: 470px; }
+        .field { margin-bottom: 14px; }
+        .field label { display: block; font-size: .7rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .row .field { margin-bottom: 0; }
+        .form input { max-width: none; }
+        .form button { width: 100%; }
+
+        .userPin { background: none; border: none; }
+        .userDot {
+            display: block;
+            width: 18px; height: 18px;
+            background: #FF9E6B;
+            border: 2.5px solid #fff;
+            border-radius: 50%;
+            box-shadow: 0 0 0 0 rgba(255,158,107,.55);
+            animation: pulseDot 1.8s infinite;
+        }
+        @keyframes pulseDot {
+            0%   { box-shadow: 0 0 0 0 rgba(255,158,107,.55); }
+            70%  { box-shadow: 0 0 0 18px rgba(255,158,107,0); }
+            100% { box-shadow: 0 0 0 0 rgba(255,158,107,0); }
+        }
+
+        .fcstLabel {
+            background: rgba(7,18,43,.85);
+            color: #F4F6FB;
+            border: 1px solid #20335F;
+            font-size: .68rem;
+            font-weight: 600;
+            padding: 2px 6px;
+        }
+        .demoToggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 14px;
+            font-size: .8rem;
+            color: var(--muted);
+            cursor: pointer;
+        }
+        .demoToggle input { width: 16px; height: 16px; accent-color: var(--accent); }
+
+        .allclear { border-top: 4px solid var(--safe); color: var(--muted); }
+
+        .footLink { margin-top: 22px; font-size: .8rem; }
+        .footLink a { color: var(--muted); cursor: pointer; text-decoration: underline; }
+        .footLink a:hover { color: var(--accent); }
+        .privacyText { color: var(--muted); }
+        .privacyText h3 { font-family: var(--display); color: var(--accent); margin: 20px 0 6px; font-size: 1.1rem; }
+        .privacyText p { color: var(--fg); margin: 0 0 12px; }
+    </style>
+</head>
+
+<body>
+    <header class="appHeader" onclick="showScreen('home')" style="cursor: pointer;">
+        <img class="logoImg" src="SarasotaStormlinesLogoFinished.png" alt="Stormlines logo">
+        <span class="logoText">Sarasota Stormlines</span>
+    </header>
+
+    <div id="homeScreen" class="screen active">
+        <p class="kicker">Sarasota County · Live storm &amp; flood risk</p>
+        <h1>Will your<br>street flood?</h1>
+        <p class="sub">Enter your address to receive relevant information on the latest hurricane and what you can do to protect your property. Data is fetched from NOAA and the National Hurricane Center.</p>
+
+        <div class="form">
+            <div class="field">
+                <label for="street">Street address</label>
+                <input type="text" id="street" placeholder="123 Gulf Breeze Dr">
+            </div>
+            <div class="field">
+                <label for="city">City</label>
+                <input type="text" id="city" placeholder="Sarasota">
+            </div>
+            <div class="row">
+                <div class="field">
+                    <label for="state">State</label>
+                    <input type="text" id="state" placeholder="FL">
+                </div>
+                <div class="field">
+                    <label for="zip">Zip</label>
+                    <input type="text" id="zip" placeholder="34236">
+                </div>
+            </div>
+            <button onclick="checkRisk()">Check My Risk</button>
+            <label class="demoToggle"><input type="checkbox" id="demoStorm"> Demo storm (for testing)</label>
+
+            <div id="loading" hidden>
+                <div class="spinner"></div>
+                <span>Checking your risk...</span>
+            </div>
+            <p id="addressNotice" hidden style="color: var(--crit); margin-top: 14px; font-size: .9rem;">That address didn't work. Check it and try again.</p>
+        </div>
+
+        <p class="footLink"><a onclick="showScreen('privacy')">Privacy Policy</a></p>
+    </div>
+
+    <div id="infoScreen" class="screen">
+        <div class="resultHead">
+            <div class="addrBlock">
+                <span class="addrLabel">Risk report for</span>
+                <span class="addr" id="addrChip">Your location</span>
+            </div>
+            <div class="headMeta">
+                <span class="zoneBadge">Evac Zone <b id="zoneChip">—</b></span>
+                <span class="live"><i></i> Live</span>
+            </div>
+        </div>
+
+        <div id="noStormMsg" class="panel allclear"></div>
+
+        <div id="hurricaneInfo">
+            <div class="panel risk" id="riskPanel">
+                <span class="sev" id="sev"></span>
+                <h2 id="risk"></h2>
+                <p class="riskDetail" id="riskDetail"></p>
+            </div>
+
+            <h2 class="stormTitle" id="stormHeader">The Storm</h2>
+            <div class="stormGrid">
+                <div class="tiles" id="stormTiles">
+                    <div class="tile"><span class="tLabel">Category</span><span class="tVal" id="category">—</span></div>
+                    <div class="tile"><span class="tLabel">Wind</span><span class="tVal" id="windSpeed">—</span></div>
+                    <div class="tile"><span class="tLabel">Pressure</span><span class="tVal" id="pressure">—</span></div>
+                    <div class="tile"><span class="tLabel">Est. Surge</span><span class="tVal" id="expectedSurge">—</span></div>
+                    <div class="tile"><span class="tLabel">Dangerous Side</span><span class="tVal" id="onDangerousSide">—</span></div>
+                    <div class="tile"><span class="tLabel">Distance</span><span class="tVal" id="distStorm">—</span></div>
+                    <div class="tile"><span class="tLabel">Moving</span><span class="tVal" id="moving">—</span></div>
+                </div>
+                <div id="stormMapSlot"></div>
+            </div>
+        </div>
+
+        <h2 class="sectionHead">Your Home</h2>
+        <div class="tiles">
+            <div class="tile"><span class="tLabel">Evac Zone</span><span class="tVal" id="zone">—</span></div>
+            <div class="tile"><span class="tLabel">Elevation</span><span class="tVal" id="heightAboveSeaLevel">—</span></div>
+            <div class="tile"><span class="tLabel">Current Tide</span><span class="tVal" id="tide">—</span></div>
+            <div class="tile"><span class="tLabel">Next High Tide</span><span class="tVal" id="highTide">—</span><span class="tSub" id="highTideTime"></span></div>
+            <div class="tile"><span class="tLabel">Miles Inland</span><span class="tVal" id="inland">—</span></div>
+        </div>
+
+        <div id="homeMapSlot">
+            <div class="panel mapPanel" id="mapPanel"><div id="map"></div></div>
+        </div>
+
+        <div id="planCta">
+            <button onclick="showScreen('plan')">See My Plan</button>
+        </div>
+    </div>
+
+    <div id="planScreen" class="screen">
+        <h1>Your Plan</h1>
+        <div id="planContent"></div>
+        <button onclick="showScreen('extra')">View Extra Tips</button>
+    </div>
+
+    <div id="extraScreen" class="screen">
+        <h1>Hurricane Prep</h1>
+        <p class="lead">Tap a section to open it. Check things off as you go. ↓</p>
+
+        <details class="tip" open>
+            <summary>Know your zone</summary>
+            <div class="tip-body">
+                <p>Find your evacuation zone before a storm is near. Sarasota County uses zones A through E. A floods first and leaves first. E is safest. Look up your address on the county map at scgov.net. If your zone is ordered to evacuate, leave early. Don't go to a shelter until the county says it's open. If someone at home has medical needs, sign up for the county's Medical Needs Program ahead of time.</p>
+            </div>
+        </details>
+
+        <details class="tip">
+            <summary>Build your kit</summary>
+            <div class="tip-body">
+                <label class="check"><input type="checkbox"> Water: one gallon per person per day, for several days</label>
+                <label class="check"><input type="checkbox"> Food that won't spoil, and a can opener</label>
+                <label class="check"><input type="checkbox"> Medications, two weeks if you can</label>
+                <label class="check"><input type="checkbox"> Flashlight and batteries</label>
+                <label class="check"><input type="checkbox"> A battery or hand-crank radio</label>
+                <label class="check"><input type="checkbox"> First-aid kit</label>
+                <label class="check"><input type="checkbox"> Chargers and a power bank</label>
+                <label class="check"><input type="checkbox"> Documents in something waterproof</label>
+                <label class="check"><input type="checkbox"> Cash, since card readers go down with the power</label>
+            </div>
+        </details>
+
+        <details class="tip">
+            <summary>When a storm is coming</summary>
+            <div class="tip-body">
+                <label class="check"><input type="checkbox"> Fill your gas tank</label>
+                <label class="check"><input type="checkbox"> Charge everything</label>
+                <label class="check"><input type="checkbox"> Bring in or tie down anything outside</label>
+                <label class="check"><input type="checkbox"> Move valuables up high</label>
+                <label class="check"><input type="checkbox"> Fill the bathtub for extra water</label>
+                <label class="check"><input type="checkbox"> Decide if you're staying or leaving</label>
+                <label class="check"><input type="checkbox"> Tell your family the plan</label>
+            </div>
+        </details>
+
+        <details class="tip">
+            <summary>During the storm</summary>
+            <div class="tip-body">
+                <p>Stay inside, away from windows. If it goes calm, that's the eye. Don't go out. The other side is still coming. If water comes in, go up. Never walk or drive through floodwater.</p>
+            </div>
+        </details>
+
+        <details class="tip">
+            <summary>After it passes</summary>
+            <div class="tip-body">
+                <p>Stay out until it's safe. Power lines can still be live, and water can be dirty or dangerous. If you left, wait for the all-clear before going home. Check on neighbors once it's safe.</p>
+            </div>
+        </details>
+
+        <button onclick="showScreen('info')">Back to Info</button>
+    </div>
+
+    <div id="privacyScreen" class="screen">
+        <h1>Privacy</h1>
+        <div class="privacyText">
+            <p>Sarasota Stormlines is a student project for the Congressional App Challenge.</p>
+
+            <h3>What you give the app</h3>
+            <p>An address: street, city, state, and ZIP. That's it.</p>
+
+            <h3>How it's used</h3>
+            <p>Your address is used to look up risk info for that spot. It's sent to public government data services to find your coordinates, elevation, evacuation zone, nearby water, tides, and any active storm: the U.S. Census Bureau (address lookup and water data), the U.S. Geological Survey (elevation), NOAA and the National Hurricane Center (tides, storms, surge), and Sarasota County (evacuation zones).</p>
+
+            <h3>What's saved</h3>
+            <p>The app saves your last address in your own browser, on your device, so you don't have to retype it. It stays on your device, is never sent to a server, and the developer never sees it. You can clear it anytime by clearing your browser's site data.</p>
+
+            <h3>What's not collected</h3>
+            <p>No accounts. No database. No cookies. No tracking or analytics. The app does not keep your address or any personal information on a server.</p>
+
+            <h3>Sharing</h3>
+            <p>Nothing is sold or shared beyond the government services above, and nothing is used for advertising.</p>
+
+            <h3>Changes</h3>
+            <p>This policy may change as the app develops.</p>
+        </div>
+        <button onclick="showScreen('home')">Back</button>
+    </div>
+
+    <nav>
+        <button id="navHome" onclick="showScreen('home')">Home</button>
+        <button id="navInfo" onclick="showScreen('info')" disabled>Info</button>
+        <button id="navPlan" onclick="showScreen('plan')" disabled>Plan</button>
+        <button id="navExtra" onclick="showScreen('extra')" disabled>Extra</button>
+    </nav>
+
+    <script>
+        let street = document.getElementById("street");
+        let city = document.getElementById("city");
+        let state = document.getElementById("state");
+        let zip = document.getElementById("zip");
+
+        let navInfo = document.getElementById("navInfo");
+        let navPlan = document.getElementById("navPlan");
+        let navExtra = document.getElementById("navExtra");
+
+        let risk = document.getElementById("risk");
+        let riskDetail = document.getElementById("riskDetail");
+        let sev = document.getElementById("sev");
+        let riskPanel = document.getElementById("riskPanel");
+
+        let stormHeaderElement = document.getElementById("stormHeader");
+        let categoryElement = document.getElementById("category");
+        let windSpeedElement = document.getElementById("windSpeed");
+        let pressureElement = document.getElementById("pressure");
+        let expectedSurgeElement = document.getElementById("expectedSurge");
+        let onDangerousSideElement = document.getElementById("onDangerousSide");
+        let distStormElement = document.getElementById("distStorm");
+        let movingElement = document.getElementById("moving");
+
+        let zoneElement = document.getElementById("zone");
+        let heightAboveSeaLevelElement = document.getElementById("heightAboveSeaLevel");
+        let tideElement = document.getElementById("tide");
+        let highTideElement = document.getElementById("highTide");
+        let highTideTimeElement = document.getElementById("highTideTime");
+        let distanceInlandElement = document.getElementById("inland");
+
+        let zoneChip = document.getElementById("zoneChip");
+        let addrChip = document.getElementById("addrChip");
+
+        let hurricaneInfoDiv = document.getElementById("hurricaneInfo");
+        let noStormMsgElement = document.getElementById("noStormMsg");
+        let loadingElement = document.getElementById("loading");
+        let addressNotice = document.getElementById("addressNotice");
+        let planContent = document.getElementById("planContent");
+        let demoToggle = document.getElementById("demoStorm");
+
+        let mapPanel = document.getElementById("mapPanel");
+        let stormMapSlot = document.getElementById("stormMapSlot");
+        let homeMapSlot = document.getElementById("homeMapSlot");
+
+        let stormActive;
+        let hurricaneName;
+        let hurricaneCategory = 1;
+        let windSpeed;
+        let pressure = 0;
+        let predictedStormSurge = 0;
+        let stormLat;
+        let stormLon;
+        let movementDir;
+        let distanceFromStorm = 0;
+        let onDangerousSide = false;
+
+        let evacZone;
+        let heightAboveSeaLevel = 0;
+        let tide = 0;
+        let highTide = 0;
+        let highTideTime = "";
+        let distanceInland = 0;
+        let userLat;
+        let userLon;
+
+        let userMarker;
+        let stormMarker;
+
+        let addressValid = true;
+
+        let map = L.map("map", { maxZoom: 18 }).setView([27.3364, -82.5307], 11);
+        L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+            attribution: "© Esri",
+            maxZoom: 18
+        }).addTo(map);
+        L.esri.dynamicMapLayer({
+            url: "https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather_summary/MapServer",
+            opacity: 0.85,
+            f: "image"
+        }).addTo(map);
+
+
+        function calculateSurgeRisk() {
+            let surgeDanger = 0;
+            let zoneFactor = 0;
+            let inlandFactor = 0;
+            let sideFactor = 0;
+
+            let totalWater = predictedStormSurge + tide;
+            let coastalFlood = totalWater - heightAboveSeaLevel;
+
+            if (coastalFlood >= 0) {
+                if (evacZone === "A") {
+                    zoneFactor = 2;
+                } else if (evacZone === "B") {
+                    zoneFactor = 1.8;
+                } else if (evacZone === "C") {
+                    zoneFactor = 1.5;
+                } else if (evacZone === "D") {
+                    zoneFactor = 1.2;
+                } else {
+                    zoneFactor = 1.0;
+                }
+            } else if (coastalFlood >= -5) {
+                if (evacZone === "A") {
+                    zoneFactor = 1.5;
+                } else if (evacZone === "B") {
+                    zoneFactor = 1.2;
+                } else if (evacZone === "C") {
+                    zoneFactor = 1.0;
+                } else if (evacZone === "D") {
+                    zoneFactor = 0.8;
+                } else {
+                    zoneFactor = 0.6;
+                }
+            } else {
+                if (evacZone === "A") {
+                    zoneFactor = 1.2;
+                } else if (evacZone === "B") {
+                    zoneFactor = 1.0;
+                } else if (evacZone === "C") {
+                    zoneFactor = 0.8;
+                } else if (evacZone === "D") {
+                    zoneFactor = 0.6;
+                } else {
+                    zoneFactor = 0.4;
+                }
+            }
+
+            if (distanceInland < 15) {
+                if (distanceInland < 3) {
+                    inlandFactor = 1.0;
+                } else if (distanceInland < 6) {
+                    inlandFactor = 0.75;
+                } else if (distanceInland < 10) {
+                    inlandFactor = 0.6;
+                } else if (distanceInland < 15 && hurricaneCategory >= 4) {
+                    inlandFactor = 0.5;
+                } else {
+                    inlandFactor = 0.2;
+                }
+            }
+
+            if (onDangerousSide) {
+                sideFactor = 1.4;
+            } else {
+                sideFactor = 0.6;
+            }
+
+            if (coastalFlood <= 0) {
+                coastalFlood = 0.1;
+            }
+
+            surgeDanger = (coastalFlood * 50) * zoneFactor * inlandFactor * sideFactor;
+
+            return surgeDanger;
+        }
+
+        function calculateStormDanger() {
+            let stormDanger = 0;
+
+            if (!stormActive) {
+                return 0;
+            }
+
+            if (distanceFromStorm < 500) {
+                if (distanceFromStorm < 100) {
+                    stormDanger += 500;
+                } else if (distanceFromStorm >= 100 && distanceFromStorm < 250) {
+                    stormDanger += 400;
+                } else if (distanceFromStorm >= 250 && distanceFromStorm < 400) {
+                    stormDanger += 300;
+                } else {
+                    stormDanger += 200;
+                }
+            }
+
+            if (pressure < 1000) {
+                if (pressure < 930) {
+                    stormDanger += 100;
+                } else if (pressure >= 930 && pressure < 950) {
+                    stormDanger += 75;
+                } else if (pressure >= 950 && pressure < 970) {
+                    stormDanger += 50;
+                } else {
+                    stormDanger += 25;
+                }
+            }
+
+            hurricaneCategory = getCategory(windSpeed);
+            stormDanger += hurricaneCategory * 100;
+
+            return stormDanger;
+        }
+
+        function analyzeRisk() {
+            let surge = calculateSurgeRisk();
+            let storm = calculateStormDanger();
+            let riskScore = surge * 1.2 + storm;
+            return riskScore;
+        }
+
+        async function checkRisk() {
+            addressNotice.hidden = true;
+            loadingElement.hidden = false;
+
+            let [tideVal, elevVal] = await Promise.all([
+                getTide(),
+                getElevation(),
+                getStorm(),
+                getHighTide()
+            ]);
+
+            tide = tideVal;
+            heightAboveSeaLevel = elevVal;
+
+            if (!addressValid) {
+                loadingElement.hidden = true;
+                addressNotice.hidden = false;
+                return;
+            }
+
+            saveAddress();
+
+            if (stormActive && stormLat !== undefined && stormLon !== undefined) {
+                distanceFromStorm = getDistance(userLat, userLon, stormLat, stormLon);
+                let bearingToUser = getBearing(stormLat, stormLon, userLat, userLon);
+                let diff = (bearingToUser - movementDir + 360) % 360;
+                onDangerousSide = (diff > 0 && diff < 180);
+
+                hurricaneCategory = getCategory(windSpeed);
+
+                let surgeResp = await fetch("/surge?lat=" + userLat + "&lon=" + userLon + "&cat=" + hurricaneCategory);
+                let surgeData = await surgeResp.json();
+                predictedStormSurge = surgeData.surge;
+            }
+
+            let result = analyzeRisk();
+
+            if (result > 2500) {
+                risk.textContent = "Extreme Risk";
+                riskDetail.textContent = "Evacuate. This is a serious threat to your area.";
+                sev.textContent = "EXTREME";
+                riskPanel.className = "panel risk sev-crit";
+            } else if (result > 1500) {
+                risk.textContent = "Very High Risk";
+                riskDetail.textContent = "Evacuate. Conditions will be dangerous.";
+                sev.textContent = "EXTREME";
+                riskPanel.className = "panel risk sev-crit";
+            } else if (result > 1100) {
+                risk.textContent = "High Risk";
+                riskDetail.textContent = "Evacuate. Your area is at high risk.";
+                sev.textContent = "HIGH";
+                riskPanel.className = "panel risk sev-high";
+            } else if (result > 900) {
+                risk.textContent = "High Risk";
+                riskDetail.textContent = "Evacuation is recommended.";
+                sev.textContent = "HIGH";
+                riskPanel.className = "panel risk sev-high";
+            } else if (result > 650) {
+                risk.textContent = "Medium Risk";
+                riskDetail.textContent = "Be ready to leave. Follow your county's orders.";
+                sev.textContent = "MEDIUM";
+                riskPanel.className = "panel risk sev-warn";
+            } else if (result > 450) {
+                risk.textContent = "Low Risk";
+                riskDetail.textContent = "You probably won't need to evacuate. Stay alert.";
+                sev.textContent = "LOW";
+                riskPanel.className = "panel risk sev-low";
+            } else {
+                risk.textContent = "Very Low Risk";
+                riskDetail.textContent = "You most likely don't need to evacuate.";
+                sev.textContent = "VERY LOW";
+                riskPanel.className = "panel risk sev-low";
+            }
+
+            giveInfo();
+            updateMap();
+            givePlan(result);
+
+            loadingElement.hidden = true;
+            showScreen("info");
+
+            navInfo.disabled = false;
+            navPlan.disabled = false;
+            navExtra.disabled = false;
+        }
+
+        function giveInfo() {
+            zoneElement.textContent = evacZone;
+            zoneChip.textContent = evacZone;
+            addrChip.textContent = street.value + ", " + city.value + ", " + state.value;
+            heightAboveSeaLevelElement.textContent = heightAboveSeaLevel.toFixed(1) + " ft";
+            tideElement.textContent = tide.toFixed(1) + " ft";
+            distanceInlandElement.textContent = distanceInland.toFixed(1) + " mi";
+
+            if (highTide !== null && highTide !== undefined) {
+                highTideElement.textContent = highTide.toFixed(1) + " ft";
+            } else {
+                highTideElement.textContent = "-";
+            }
+            highTideTimeElement.textContent = highTideTime;
+
+            if (stormActive) {
+                hurricaneInfoDiv.hidden = false;
+                noStormMsgElement.hidden = true;
+                stormMapSlot.appendChild(mapPanel);
+
+                stormHeaderElement.textContent = hurricaneName;
+                categoryElement.textContent = "Cat " + hurricaneCategory;
+                windSpeedElement.textContent = Math.round(windSpeed * 1.15) + " mph";
+                pressureElement.textContent = pressure + " mb";
+                expectedSurgeElement.textContent = predictedStormSurge + " ft";
+                distStormElement.textContent = Math.round(distanceFromStorm) + " mi";
+                movingElement.textContent = degToCompass(movementDir);
+
+                if (onDangerousSide) {
+                    onDangerousSideElement.textContent = "Yes";
+                } else {
+                    onDangerousSideElement.textContent = "No";
+                }
+            } else {
+                hurricaneInfoDiv.hidden = true;
+                noStormMsgElement.hidden = false;
+                homeMapSlot.appendChild(mapPanel);
+                noStormMsgElement.textContent = "No storms are active near Sarasota right now. Your home info is below. Check the Extra tab to get ready for the season.";
+            }
+        }
+
+        function updateMap() {
+            if (userMarker) {
+                map.removeLayer(userMarker);
+            }
+            if (stormMarker) {
+                map.removeLayer(stormMarker);
+            }
+
+            userMarker = L.marker([userLat, userLon], {
+                icon: L.divIcon({
+                    className: "userPin",
+                    html: "<span class='userDot'></span>",
+                    iconSize: [18, 18],
+                    iconAnchor: [9, 9]
+                })
+            }).addTo(map).bindPopup("Your location");
+
+            map.setView([userLat, userLon], 10);
+
+            if (stormActive && stormLat !== undefined && stormLon !== undefined) {
+                stormMarker = L.circleMarker([stormLat, stormLon], {
+                    radius: 11, color: "#ffffff", weight: 2, fillColor: "#F2524B", fillOpacity: 0.9
+                }).addTo(map).bindPopup("Hurricane " + hurricaneName);
+            }
+        }
+
+        function givePlan(result) {
+            if (!stormActive) {
+                planContent.innerHTML =
+                    "<h2>Get Ready for Hurricane Season</h2>" +
+                    "<label class='check'><input type='checkbox'> Find your evacuation zone</label>" +
+                    "<label class='check'><input type='checkbox'> Build an emergency kit</label>" +
+                    "<label class='check'><input type='checkbox'> Decide where your family will go and how you'll reach each other</label>" +
+                    "<label class='check'><input type='checkbox'> Know your route out</label>" +
+                    "<label class='check'><input type='checkbox'> Keep documents somewhere waterproof</label>" +
+                    "<label class='check'><input type='checkbox'> Check your insurance (flood is usually separate)</label>";
+                return;
+            }
+
+            if (result > 900) {
+                planContent.innerHTML =
+                    "<h2>High Risk — Evacuate</h2>" +
+                    "<label class='check'><input type='checkbox'> Leave if your zone is under an evacuation order</label>" +
+                    "<label class='check'><input type='checkbox'> Take your kit: meds, IDs, chargers, water</label>" +
+                    "<label class='check'><input type='checkbox'> Fill your gas tank</label>" +
+                    "<label class='check'><input type='checkbox'> Go inland, east of I-75, before bridges close</label>" +
+                    "<label class='check'><input type='checkbox'> Tell family where you're going</label>" +
+                    "<label class='check'><input type='checkbox'> Move valuables up high, unplug electronics</label>";
+            } else if (result > 650) {
+                planContent.innerHTML =
+                    "<h2>Medium Risk — Get Ready</h2>" +
+                    "<label class='check'><input type='checkbox'> Pack your kit</label>" +
+                    "<label class='check'><input type='checkbox'> Fill your gas tank</label>" +
+                    "<label class='check'><input type='checkbox'> Move your car and valuables to higher ground</label>" +
+                    "<label class='check'><input type='checkbox'> Charge your devices and power banks</label>" +
+                    "<label class='check'><input type='checkbox'> Know your route out</label>" +
+                    "<label class='check'><input type='checkbox'> Watch official updates</label>";
+            } else {
+                planContent.innerHTML =
+                    "<h2>Low Risk — Stay Alert</h2>" +
+                    "<label class='check'><input type='checkbox'> Keep watching the storm</label>" +
+                    "<label class='check'><input type='checkbox'> Keep devices charged and your kit ready</label>" +
+                    "<label class='check'><input type='checkbox'> Check your evacuation zone</label>" +
+                    "<label class='check'><input type='checkbox'> Check on neighbors in low areas</label>";
+            }
+        }
+
+        async function getTide() {
+            let url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?date=latest&station=8726520&product=water_level&datum=MLLW&time_zone=lst_ldt&units=english&format=json";
+            let response = await fetch(url);
+            let noaa = await response.json();
+            let tideValue = Number(noaa.data[0].v);
+            return tideValue;
+        }
+
+        async function getHighTide() {
+            let now = new Date();
+            let yyyy = now.getFullYear();
+            let mm = String(now.getMonth() + 1).padStart(2, "0");
+            let dd = String(now.getDate()).padStart(2, "0");
+            let beginDate = "" + yyyy + mm + dd;
+
+            let url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?begin_date=" + beginDate + "&range=48&station=8726520&product=predictions&datum=MLLW&time_zone=lst_ldt&units=english&interval=hilo&format=json";
+            let response = await fetch(url);
+            let data = await response.json();
+
+            for (let p of data.predictions) {
+                if (p.type === "H" && new Date(p.t.replace(" ", "T")) > now) {
+                    highTide = Number(p.v);
+                    highTideTime = formatTime(p.t);
+                    return;
+                }
+            }
+
+            highTide = null;
+            highTideTime = "";
+        }
+
+        async function getElevation() {
+            let address = street.value + ", " + city.value + ", " + state.value + " " + zip.value;
+            let response = await fetch("/elevation?address=" + encodeURIComponent(address));
+            let data = await response.json();
+
+            if (data.error) {
+                addressValid = false;
+                return 0;
+            }
+
+            addressValid = true;
+            evacZone = data.zone;
+            userLat = data.lat;
+            userLon = data.lon;
+            distanceInland = data.distanceInland;
+            return Number(data.elevation);
+        }
+
+        function saveAddress() {
+            try {
+                localStorage.setItem("stormlines_street", street.value);
+                localStorage.setItem("stormlines_city", city.value);
+                localStorage.setItem("stormlines_state", state.value);
+                localStorage.setItem("stormlines_zip", zip.value);
+            } catch (e) {}
+        }
+
+        function loadAddress() {
+            try {
+                let saved = localStorage.getItem("stormlines_street");
+                if (saved) {
+                    street.value = saved;
+                    city.value = localStorage.getItem("stormlines_city");
+                    state.value = localStorage.getItem("stormlines_state");
+                    zip.value = localStorage.getItem("stormlines_zip");
+                }
+            } catch (e) {}
+        }
+
+        async function getStorm() {
+            if (demoToggle.checked) {
+                stormActive = true;
+                hurricaneName = "Hurricane Nova";
+                windSpeed = 130;
+                pressure = 935;
+                stormLat = 26.6;
+                stormLon = -83.6;
+                movementDir = 45;
+                return;
+            }
+
+            let response = await fetch("/storm");
+            let data = await response.json();
+
+            if (data.active === false) {
+                stormActive = false;
+                return;
+            }
+
+            stormActive = true;
+            hurricaneName = data.name;
+            windSpeed = Number(data.windSpeed);
+            pressure = Number(data.pressure);
+            stormLat = data.lat;
+            stormLon = data.lon;
+            movementDir = data.movementDir;
+        }
+
+        function getCategory(wind) {
+            if (wind >= 137) {
+                return 5;
+            } else if (wind >= 113) {
+                return 4;
+            } else if (wind >= 96) {
+                return 3;
+            } else if (wind >= 83) {
+                return 2;
+            } else if (wind >= 64) {
+                return 1;
+            } else {
+                return 0;
+            }
+        }
+
+        function getDistance(lat1, lon1, lat2, lon2) {
+            let R = 3959;
+            let toRad = Math.PI / 180;
+            let dLat = (lat2 - lat1) * toRad;
+            let dLon = (lon2 - lon1) * toRad;
+            let a = Math.sin(dLat/2)**2 + Math.cos(lat1*toRad) * Math.cos(lat2*toRad) * Math.sin(dLon/2)**2;
+            let c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        function getBearing(lat1, lon1, lat2, lon2) {
+            let toRad = Math.PI / 180;
+            let dLon = (lon2 - lon1) * toRad;
+            let y = Math.sin(dLon) * Math.cos(lat2 * toRad);
+            let x = Math.cos(lat1 * toRad) * Math.sin(lat2 * toRad) - Math.sin(lat1 * toRad) * Math.cos(lat2 * toRad) * Math.cos(dLon);
+            let bearing = Math.atan2(y, x) / toRad;
+            return (bearing + 360) % 360;
+        }
+
+        function formatTime(t) {
+            let d = new Date(t.replace(" ", "T"));
+            let hour = d.getHours();
+            let minute = String(d.getMinutes()).padStart(2, "0");
+
+            let ampm = "AM";
+            if (hour >= 12) {
+                ampm = "PM";
+            }
+
+            let hour12 = hour % 12;
+            if (hour12 === 0) {
+                hour12 = 12;
+            }
+
+            return hour12 + ":" + minute + " " + ampm;
+        }
+
+        function degToCompass(deg) {
+            let dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+            let i = Math.round(deg / 45) % 8;
+            return dirs[i];
+        }
+
+        function showScreen(name) {
+            let navs = document.querySelectorAll("nav button");
+            for (let b of navs) {
+                b.classList.remove("navActive");
+            }
+
+            let activeBtn = document.getElementById("nav" + name.charAt(0).toUpperCase() + name.slice(1));
+            if (activeBtn) {
+                activeBtn.classList.add("navActive");
+            }
+
+            let screens = document.querySelectorAll(".screen");
+            for (let s of screens) {
+                s.classList.remove("active");
+            }
+
+            document.getElementById(name + "Screen").classList.add("active");
+            window.scrollTo(0, 0);
+
+            if (name === "info" && map) {
+                map.invalidateSize();
+            }
+        }
+
+        loadAddress();
+    </script>
+</body>
+</html>
