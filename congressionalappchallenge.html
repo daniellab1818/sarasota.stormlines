@@ -2,6 +2,7 @@
 <html lang="en">
 
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
@@ -294,6 +295,7 @@
         .sev-warn #risk { color: var(--warn); }
         .sev-low  #risk { color: var(--safe); }
         .riskDetail { color: var(--muted); font-family: var(--body); font-size: 1rem; margin: 12px 0 0; }
+        .riskWhy { color: var(--muted); font-family: var(--body); font-size: .92rem; line-height: 1.5; margin: 14px 0 0; padding-top: 14px; border-top: 1px solid var(--line); }
 
         .resultHead {
             display: flex;
@@ -460,6 +462,7 @@
                 <span class="sev" id="sev"></span>
                 <h2 id="risk"></h2>
                 <p class="riskDetail" id="riskDetail"></p>
+                <p class="riskWhy" id="riskWhy"></p>
             </div>
 
             <h2 class="stormTitle" id="stormHeader">The Storm</h2>
@@ -591,20 +594,25 @@
     </nav>
 
     <script>
+        // grab the inputs
         let street = document.getElementById("street");
         let city = document.getElementById("city");
         let state = document.getElementById("state");
         let zip = document.getElementById("zip");
 
+        // nav buttons
         let navInfo = document.getElementById("navInfo");
         let navPlan = document.getElementById("navPlan");
         let navExtra = document.getElementById("navExtra");
 
+        // risk panel
         let risk = document.getElementById("risk");
         let riskDetail = document.getElementById("riskDetail");
+        let riskWhyElement = document.getElementById("riskWhy");
         let sev = document.getElementById("sev");
         let riskPanel = document.getElementById("riskPanel");
 
+        // storm tiles
         let stormHeaderElement = document.getElementById("stormHeader");
         let categoryElement = document.getElementById("category");
         let windSpeedElement = document.getElementById("windSpeed");
@@ -614,6 +622,7 @@
         let distStormElement = document.getElementById("distStorm");
         let movingElement = document.getElementById("moving");
 
+        // home tiles
         let zoneElement = document.getElementById("zone");
         let heightAboveSeaLevelElement = document.getElementById("heightAboveSeaLevel");
         let tideElement = document.getElementById("tide");
@@ -621,9 +630,11 @@
         let highTideTimeElement = document.getElementById("highTideTime");
         let distanceInlandElement = document.getElementById("inland");
 
+        // top chips
         let zoneChip = document.getElementById("zoneChip");
         let addrChip = document.getElementById("addrChip");
 
+        // other ui
         let hurricaneInfoDiv = document.getElementById("hurricaneInfo");
         let noStormMsgElement = document.getElementById("noStormMsg");
         let loadingElement = document.getElementById("loading");
@@ -631,10 +642,12 @@
         let planContent = document.getElementById("planContent");
         let demoToggle = document.getElementById("demoStorm");
 
+        // map pieces
         let mapPanel = document.getElementById("mapPanel");
         let stormMapSlot = document.getElementById("stormMapSlot");
         let homeMapSlot = document.getElementById("homeMapSlot");
 
+        // hurricane factors for API
         let stormActive;
         let hurricaneName;
         let hurricaneCategory = 1;
@@ -647,6 +660,7 @@
         let distanceFromStorm = 0;
         let onDangerousSide = false;
 
+        // API factors
         let evacZone;
         let heightAboveSeaLevel = 0;
         let tide = 0;
@@ -656,11 +670,14 @@
         let userLat;
         let userLon;
 
+        // map markers
         let userMarker;
         let stormMarker;
 
+        // did the address work
         let addressValid = true;
 
+        // map setup
         let map = L.map("map", { maxZoom: 18 }).setView([27.3364, -82.5307], 11);
         L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
             attribution: "© Esri",
@@ -673,12 +690,14 @@
         }).addTo(map);
 
 
+        // calculate risk with respect to surge
         function calculateSurgeRisk() {
             let surgeDanger = 0;
             let zoneFactor = 0;
             let inlandFactor = 0;
             let sideFactor = 0;
 
+            // how high the water could get vs how high your ground sits
             let totalWater = predictedStormSurge + tide;
             let coastalFlood = totalWater - heightAboveSeaLevel;
 
@@ -720,6 +739,7 @@
                 }
             }
 
+            // farther inland = safer from surge
             if (distanceInland < 15) {
                 if (distanceInland < 3) {
                     inlandFactor = 1.0;
@@ -734,6 +754,7 @@
                 }
             }
 
+            // the right side of the storm gets worse surge
             if (onDangerousSide) {
                 sideFactor = 1.4;
             } else {
@@ -744,11 +765,13 @@
                 coastalFlood = 0.1;
             }
 
+            // calculate overall surge danger
             surgeDanger = (coastalFlood * 50) * zoneFactor * inlandFactor * sideFactor;
 
             return surgeDanger;
         }
 
+        // calculate risk with respect to storm
         function calculateStormDanger() {
             let stormDanger = 0;
 
@@ -756,6 +779,7 @@
                 return 0;
             }
 
+            // closer storm = more danger
             if (distanceFromStorm < 500) {
                 if (distanceFromStorm < 100) {
                     stormDanger += 500;
@@ -768,6 +792,7 @@
                 }
             }
 
+            // lower pressure = stronger storm
             if (pressure < 1000) {
                 if (pressure < 930) {
                     stormDanger += 100;
@@ -780,12 +805,14 @@
                 }
             }
 
+            // add category
             hurricaneCategory = getCategory(windSpeed);
             stormDanger += hurricaneCategory * 100;
 
             return stormDanger;
         }
 
+        // combine surge and storm risk
         function analyzeRisk() {
             let surge = calculateSurgeRisk();
             let storm = calculateStormDanger();
@@ -793,10 +820,12 @@
             return riskScore;
         }
 
+        // check risk
         async function checkRisk() {
             addressNotice.hidden = true;
             loadingElement.hidden = false;
 
+            // grab data
             let [tideVal, elevVal] = await Promise.all([
                 getTide(),
                 getElevation(),
@@ -807,6 +836,7 @@
             tide = tideVal;
             heightAboveSeaLevel = elevVal;
 
+            // invalid address
             if (!addressValid) {
                 loadingElement.hidden = true;
                 addressNotice.hidden = false;
@@ -815,6 +845,7 @@
 
             saveAddress();
 
+            
             if (stormActive && stormLat !== undefined && stormLon !== undefined) {
                 distanceFromStorm = getDistance(userLat, userLon, stormLat, stormLon);
                 let bearingToUser = getBearing(stormLat, stormLon, userLat, userLon);
@@ -830,6 +861,7 @@
 
             let result = analyzeRisk();
 
+            // determine risk level
             if (result > 2500) {
                 risk.textContent = "Extreme Risk";
                 riskDetail.textContent = "Evacuate. This is a serious threat to your area.";
@@ -874,12 +906,15 @@
             loadingElement.hidden = true;
             showScreen("info");
 
+            // unlock tabs
             navInfo.disabled = false;
             navPlan.disabled = false;
             navExtra.disabled = false;
         }
 
+        // give info to user
         function giveInfo() {
+            // home info
             zoneElement.textContent = evacZone;
             zoneChip.textContent = evacZone;
             addrChip.textContent = street.value + ", " + city.value + ", " + state.value;
@@ -912,6 +947,15 @@
                 } else {
                     onDangerousSideElement.textContent = "No";
                 }
+
+                let floodAboveGround = predictedStormSurge + tide - heightAboveSeaLevel;
+                if (floodAboveGround >= 1) {
+                    riskWhyElement.textContent = "Storm surge (about " + predictedStormSurge + " ft) and tide (about " + tide.toFixed(1) + " ft) could push water roughly " + Math.round(floodAboveGround) + " ft above your ground. That's what drives this risk.";
+                } else if (floodAboveGround > 0) {
+                    riskWhyElement.textContent = "Storm surge and tide could bring water right about to your ground level. Stay alert.";
+                } else {
+                    riskWhyElement.textContent = "Your ground sits above the expected surge and tide, so the risk here comes mainly from the storm's strength and how close it is.";
+                }
             } else {
                 hurricaneInfoDiv.hidden = true;
                 noStormMsgElement.hidden = false;
@@ -920,6 +964,7 @@
             }
         }
 
+        // use map
         function updateMap() {
             if (userMarker) {
                 map.removeLayer(userMarker);
@@ -928,6 +973,7 @@
                 map.removeLayer(stormMarker);
             }
 
+            // location
             userMarker = L.marker([userLat, userLon], {
                 icon: L.divIcon({
                     className: "userPin",
@@ -939,6 +985,7 @@
 
             map.setView([userLat, userLon], 10);
 
+            // storm dot
             if (stormActive && stormLat !== undefined && stormLon !== undefined) {
                 stormMarker = L.circleMarker([stormLat, stormLon], {
                     radius: 11, color: "#ffffff", weight: 2, fillColor: "#F2524B", fillOpacity: 0.9
@@ -946,7 +993,9 @@
             }
         }
 
+        // give specified plan
         function givePlan(result) {
+            // no storm = general season prep
             if (!stormActive) {
                 planContent.innerHTML =
                     "<h2>Get Ready for Hurricane Season</h2>" +
@@ -987,6 +1036,7 @@
             }
         }
 
+        // current tide right now
         async function getTide() {
             let url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?date=latest&station=8726520&product=water_level&datum=MLLW&time_zone=lst_ldt&units=english&format=json";
             let response = await fetch(url);
@@ -995,6 +1045,7 @@
             return tideValue;
         }
 
+        // next high tide and the time it hits
         async function getHighTide() {
             let now = new Date();
             let yyyy = now.getFullYear();
@@ -1006,6 +1057,7 @@
             let response = await fetch(url);
             let data = await response.json();
 
+            // find the next high tide after right now
             for (let p of data.predictions) {
                 if (p.type === "H" && new Date(p.t.replace(" ", "T")) > now) {
                     highTide = Number(p.v);
@@ -1018,6 +1070,7 @@
             highTideTime = "";
         }
 
+        // elevation, evac zone, and distance inland
         async function getElevation() {
             let address = street.value + ", " + city.value + ", " + state.value + " " + zip.value;
             let response = await fetch("/elevation?address=" + encodeURIComponent(address));
@@ -1036,6 +1089,7 @@
             return Number(data.elevation);
         }
 
+        // remember the address 
         function saveAddress() {
             try {
                 localStorage.setItem("stormlines_street", street.value);
@@ -1045,6 +1099,7 @@
             } catch (e) {}
         }
 
+        // fill the form with the saved address
         function loadAddress() {
             try {
                 let saved = localStorage.getItem("stormlines_street");
@@ -1057,6 +1112,7 @@
             } catch (e) {}
         }
 
+        // current storm from the backend, or a fake one for the demo
         async function getStorm() {
             if (demoToggle.checked) {
                 stormActive = true;
@@ -1086,6 +1142,7 @@
             movementDir = data.movementDir;
         }
 
+        // wind speed to category
         function getCategory(wind) {
             if (wind >= 137) {
                 return 5;
@@ -1102,6 +1159,7 @@
             }
         }
 
+        // distance
         function getDistance(lat1, lon1, lat2, lon2) {
             let R = 3959;
             let toRad = Math.PI / 180;
@@ -1112,6 +1170,7 @@
             return R * c;
         }
 
+        // bearing 
         function getBearing(lat1, lon1, lat2, lon2) {
             let toRad = Math.PI / 180;
             let dLon = (lon2 - lon1) * toRad;
@@ -1121,6 +1180,7 @@
             return (bearing + 360) % 360;
         }
 
+        // format time
         function formatTime(t) {
             let d = new Date(t.replace(" ", "T"));
             let hour = d.getHours();
@@ -1139,12 +1199,14 @@
             return hour12 + ":" + minute + " " + ampm;
         }
 
+        // degrees to direction
         function degToCompass(deg) {
             let dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
             let i = Math.round(deg / 45) % 8;
             return dirs[i];
         }
 
+        // switch between screens
         function showScreen(name) {
             let navs = document.querySelectorAll("nav button");
             for (let b of navs) {
@@ -1169,6 +1231,7 @@
             }
         }
 
+        // fill in the saved address 
         loadAddress();
     </script>
 </body>
